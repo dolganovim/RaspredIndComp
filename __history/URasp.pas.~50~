@@ -1,0 +1,430 @@
+(*
+Модуль предназначен для расчета распределения индивидуальных компонентов внутри группы
+
+*)
+unit URasp;
+
+
+interface
+
+uses
+  UClasses, UFaseSos, UBaseConzRecalc, Math;
+type
+  TComp = class
+    Name: string;      // название компонента
+    IdGroup: integer;  //номер группы, к которой принадлежит
+    SelfId: integer;   // номер по порядку в группе
+    Tc: double;        // температура критическая, С
+    Pc: double;        // давление критическое, Па
+    omega: double;        // ацентрический фактор
+    ro: double;        // плотность, кг/л
+    Mr: double;        // молекулярная масса, г/моль
+    ConzMol: double;        // мольная доля
+    ConzVol: double;        // объемная доля
+    ConzMas: double;        // массовая доля
+    procedure AssignComp(C: TComp);
+    procedure Initialize(_Name: string; _IdGroup, _SelfId: integer;
+       _Tc, _Pc, _omega, _ro, _Mr, _ConzMol, _ConzVol, _ConzMas: double);
+  end;
+  TGroup = class
+    Name: string;   // название группы
+    sigma: double;  // дисперсия
+    M: integer;  // мат ожидание
+    GrConzMol: double; // общая концентрация группы
+    function Get_Fx_From_M_sigma(x: integer): double;  // по нормальному распределению возвращает плотность распределения
+    procedure AssignGroup(G: TGroup);
+    procedure Initialize(_Name: string; _sigma: double; _M: integer; _GrConzMol: double);
+  end;
+  TFrac = class
+    ArrProc: TArrOfDouble;   //массив процентов выкипания
+    ArrTemp: TArrOfDouble;   //массив температур выкипания
+    tsr: double;  // температура средняя
+    K: double; // K фактор
+    ro_exp: double;  // экспериментальная плотность ro1515
+    function GetMr: double;// расчет молекулярной массы, г/моль
+    function GetK: double;// расчет характеристического фактора
+    function Get_tsr: double;// расчет средней температуры
+    procedure AssignFrac(TF: TFrac);
+  end;
+  TArrGroup = array of TGroup;  //массив групп компонентов
+  TArrComp = array of TComp;    //массив компонентов
+
+  TRasp = class
+    Groups: TArrGroup;  // группы
+    Comps: TArrComp;  // все компоненты и индивидуальные и групповые
+    Mr_exp: double;  // экспериментальная молекулярная масса, г/моль
+    ro_exp: double;  // экспериментальная плотность, кг/л
+    Frac_exp: TFrac; //экспериментальная фракционка
+    FS: TFazeSost;   // компонент для расчета фаз состояния
+    function Get_Mr: double;   // рассчитать среднюю молекулярную массу, г/моль
+    function Get_ro: double;   // рассчитать среднюю плотность, кг/л
+    procedure ReCalcGroups;  // пересчет мольных концентраций в зависимости от группы
+    function Calculation: double;  // рассчитать распределение, на выходе погрешность
+    procedure Norm; // общая нормировка
+    function GetPogr: double;  // посчитать погрешность
+    function Initialize(Comps: TArrComp; Groups: TArrGroup; Frac_exp: TFrac; _ro_exp: double; _Mr_exp: double = 0): boolean;  // Инициализация
+    //считаем, что базовыми является мольные концентрации
+    procedure RMolToMass;  // пересчет из мольных в массовые  для расчета плотности
+  end;
+implementation
+
+{ TGroup }
+
+procedure TGroup.AssignGroup(G: TGroup);
+begin
+  self.Name:=G.Name;
+  self.sigma:=G.sigma;
+  self.M:=G.M;
+  self.GrConzMol:=G.GrConzMol;
+
+end;
+
+function TGroup.Get_Fx_From_M_sigma(x: integer): double;
+begin
+  result:=1/(sigma*sqrt(2*pi))*exp(-sqr(x-M)/(2*sqr(sigma)));
+end;
+
+procedure TGroup.Initialize(_Name: string; _sigma: double; _M: integer;
+  _GrConzMol: double);
+begin
+  Name:= _Name;
+  sigma:= _sigma;
+  M:= _M;
+  GrConzMol:= _GrConzMol;
+end;
+
+{ TRasp }
+
+function TRasp.Initialize(Comps: TArrComp; Groups: TArrGroup; Frac_exp: TFrac; _ro_exp: double; _Mr_exp: double = 0): boolean;
+var
+  F, L, G: double;
+  zF, xL, yG: TArrOfDouble;
+  a: TArrOfDouble;
+  i: integer;
+  _Tc, _Pc,_Omega, _ro, _Mr : TArrOfDouble;
+begin
+  result:=false;
+  SetLength(a,6);
+  SetLength(zF, Length(Comps));
+  SetLength(xL, Length(Comps));
+  SetLength(yG, Length(Comps));
+  SetLength(_Tc, Length(Comps));
+  SetLength(_Pc, Length(Comps));
+  SetLength(_Omega, Length(Comps));
+  SetLength(_ro, Length(Comps));
+  SetLength(_Mr, Length(Comps));
+  SetLength(self.Comps, Length(Comps));
+  SetLength(self.Groups, Length(Groups));
+
+  self.Frac_exp:=TFrac.Create;
+  self.Frac_exp.AssignFrac(Frac_exp);
+
+  Frac_exp.ro_exp:=_ro_exp;
+  if _Mr_exp<>0 then
+    Mr_exp:=_Mr_exp
+  else
+    Mr_exp:=Frac_exp.GetMr;
+
+  ro_exp:=_ro_exp;
+
+  FS:= TFazeSost.Create;
+  if Length(Comps)=0 then
+  begin
+    result:=false;
+    exit;
+  end;
+  for i := 0 to Length(Comps) - 1 do
+  begin
+    self.Comps[i]:=TComp.Create;
+    self.Comps[i].AssignComp(Comps[i]);
+  end;
+  for i := 0 to Length(Groups) - 1 do
+  begin
+    self.Groups[i]:=TGroup.Create;
+    self.Groups[i].AssignGroup(Groups[i]);
+  end;
+
+
+  self.Calculation;     // посчитали все концентрации
+  a[0]:=1;
+  a[1]:=0;     //a
+  a[2]:=0.5;   //b
+  F:=1000;
+  for i := 0 to Length(zF) - 1 do
+  begin
+    zF[i]:=self.Comps[i].ConzMol;
+    xL[i]:=self.Comps[i].ConzMol;
+    yG[i]:=self.Comps[i].ConzMol;
+    _Tc[i]:=self.Comps[i].Tc;
+    _Pc[i]:=self.Comps[i].Pc;
+    _Omega[i]:=self.Comps[i].omega;
+    _ro[i]:=self.Comps[i].ro;
+    _Mr[i]:=self.Comps[i].Mr;
+  end;
+
+
+  fs.Inizial(zF, F, L, G, xL, yG, _Pc, _Tc, _Omega, _ro, _Mr, a);
+  self.FS:=fs;
+
+end;
+
+procedure TRasp.RMolToMass;
+var
+  i: integer;
+  Cin, Cout, M: TArrOfDouble;
+begin
+// пересчет из мольных в массовые
+  SetLength(Cin, Length(Comps));
+  SetLength(Cout, Length(Comps));
+  SetLength(M, Length(Comps));
+
+  for i:=0 to Length(Comps)-1 do
+  begin
+    Cin[i]:=Comps[i].ConzMol;
+    M[i]:=Comps[i].Mr;
+  end;
+  MolToMass(Cin, Cout, M);
+  for i:=0 to Length(Comps)-1 do
+  begin
+    Comps[i].ConzMas:=Cout[i];
+  end;
+end;
+
+function TRasp.Calculation: double;
+begin
+  result:=1e10;
+  ReCalcGroups; // пересчет мольных концентраций в зависимости от группы
+  Norm; // общая нормировка
+  result:=GetPogr;
+end;
+
+function TRasp.GetPogr: double;
+var
+  i:integer;
+  _MT: double;
+begin
+
+  result:=abs(Mr_exp-Get_Mr)/Mr_exp+abs(ro_exp-Get_ro)/ro_exp;
+  // погрешность по фракционке
+  _MT:=0;
+  for i:=0 to Length(Frac_exp.ArrProc)-1 do
+  begin
+    if Frac_exp.ArrTemp[i]<>0 then
+      result:=result+abs((Frac_exp.ArrTemp[i]-fs.GetTempFromProc(Frac_exp.ArrProc[i], _MT))/Frac_exp.ArrTemp[i]);
+  end;
+
+end;
+
+function TRasp.Get_Mr: double;
+var
+  i: integer;
+begin
+  result:=0;
+  for i := 0 to Length(Comps) - 1 do
+  begin
+    result:=result+Comps[i].ConzMol*Comps[i].Mr;
+  end;
+end;
+
+function TRasp.Get_ro: double;
+var
+  i: integer;
+begin
+  result:=0;
+  RMolToMass;
+  for i := 0 to Length(Comps) - 1 do
+  begin
+    if Comps[i].ro>0 then
+      result:=result+Comps[i].ConzMas/Comps[i].ro;
+  end;
+  if result>0 then
+    result:=1/result;
+end;
+
+procedure TRasp.Norm;
+var
+  j: integer;
+  sum: double;
+begin
+  sum:=0;
+  for j := 0 to Length(Comps) - 1 do
+  begin
+    sum:= sum+Comps[j].ConzMol;
+  end;
+
+  for j := 0 to Length(Comps) - 1 do
+  begin
+    if sum>0 then
+      Comps[j].ConzMol:=Comps[j].ConzMol/sum;
+  end;
+  RMolToMass;
+end;
+
+procedure TRasp.ReCalcGroups;
+var
+  i, j: integer;
+  sum: double;
+begin
+  // сначала пройдемся по всем копонентам и по всем группам,
+  // рассчитаем плотность вероятности и подставим это в мольную долю
+  // компонента
+
+  for i := 0 to Length(Groups) - 1 do
+  begin
+    sum:=0;  // общая сумма плотности вероятности, для нормировки
+    for j := 0 to Length(Comps) - 1 do
+    begin
+      if Comps[j].IdGroup=i then  // если данный компонент принадлежит этой группе
+      begin
+        Comps[j].ConzMol:=Groups[i].Get_Fx_From_M_sigma(Comps[j].SelfId); //присваиваем плотность вероятности
+        sum:= sum+Comps[j].ConzMol;
+      end;
+    end;
+    //нормировка
+    for j := 0 to Length(Comps) - 1 do
+    begin
+      if Comps[j].IdGroup=i then  // если данный компонент принадлежит этой группе
+      begin
+        if sum>0 then
+          Comps[j].ConzMol:=Comps[j].ConzMol/sum;
+      end;
+    end;
+    //умножить на концентрацию группы
+    for j := 0 to Length(Comps) - 1 do
+    begin
+      if Comps[j].IdGroup=i then  // если данный компонент принадлежит этой группе
+      begin
+        Comps[j].ConzMol:=Comps[j].ConzMol*Groups[i].GrConzMol;
+      end;
+    end;
+  end;
+end;
+
+{ TComp }
+
+procedure TComp.AssignComp(C: TComp);
+begin
+  self.Name:=C.Name;
+  self.IdGroup:=C.IdGroup;
+  self.SelfId:=C.SelfId;
+  self.Tc:=C.Tc;
+  self.Pc:=C.Pc;
+  self.omega:=C.omega;
+  self.ro:=C.ro;
+  self.Mr:=C.Mr;
+  self.ConzMol:=C.ConzMol;
+  self.ConzVol:=C.ConzVol;
+  self.ConzMas:=C.ConzMas;
+
+end;
+
+procedure TComp.Initialize(_Name: string; _IdGroup, _SelfId: integer; _Tc, _Pc,
+  _omega, _ro, _Mr, _ConzMol, _ConzVol, _ConzMas: double);
+begin
+  Name:=_Name;
+  IdGroup:=_IdGroup;
+  SelfId:=_SelfId;
+  Tc:=_Tc;
+  Pc:=_Pc;
+  omega:=_omega;
+  ro:=_ro;
+  Mr:=_Mr;
+  ConzMol:=_ConzMol;
+  ConzVol:=_ConzVol;
+  ConzMas:=_ConzMas;
+end;
+
+{ TFrac }
+
+procedure TFrac.AssignFrac(TF: TFrac);
+var
+  i: integer;
+begin
+  SetLength(Self.ArrProc, Length(TF.ArrProc));
+  SetLength(Self.ArrTemp, Length(TF.ArrTemp));
+
+  for i := 0 to Length(TF.ArrProc) - 1 do
+    Self.ArrProc[i]:=TF.ArrProc[i];
+  for i := 0 to Length(TF.ArrTemp) - 1 do
+    Self.ArrTemp[i]:=TF.ArrTemp[i];
+  Self.tsr:=TF.tsr;
+  Self.K:=TF.K;
+
+end;
+
+
+function TFrac.GetK: double;// расчет характеристического фактора
+begin
+  result:=1.216*power(tsr+273.15,1/3)/ro_exp;     // хорошко хорошко
+end;
+
+
+function TFrac.GetMr: double;// расчет молекулярной массы
+begin
+  tsr:=Get_tsr;
+  K:=GetK;
+  result:=(7*K-21.5)+(0.76-0.04*K)*tsr+(0.0003*K-0.00245)*tsr*tsr;  // хорошко хорошко
+
+  //result:=result+(247.5-result)*0.8;
+end;
+
+
+function TFrac.Get_tsr: double;// расчет средней температуры
+
+  function BlizZnach(target: double): integer;
+  var
+    i: integer;
+    min: double;
+  begin
+    result:=0;
+    min:=1000000;
+    for i := 0 to Length(ArrProc) - 1 do
+    begin
+      if abs(target-ArrProc[i])<min then
+      begin
+        result:=i;
+        min:= abs(target-ArrProc[i]);
+      end;
+    end;
+
+  end;
+  function get_mn(i_pr: integer): double;
+  begin
+    if i_pr=0 then
+    begin
+      result:=ArrProc[0]/100;
+      exit;
+    end;
+    result:=(ArrProc[i_pr]-ArrProc[i_pr-1])/100;
+    if i_pr=Length(ArrProc)-1 then
+    begin
+      result:=(100-ArrProc[i_pr-1])/100;
+    end;
+
+  end;
+const
+  a: array[1..4] of array [0..2] of double = ((-10.02, 0.66927e-2, -7.01419e-7),
+                                              (-0.827035, 0.7712e-3, -1.1169e-6),
+                                              (0, 0, 0),
+                                              (-3.9394e-2, 4.8532e-5, -1.137e-8));
+var
+  alfa, alfaf, Tf, dt: double;
+  i, j: integer;
+begin
+  // рассчитываю среднюю объемную температуру кипения, хотя нужно мольную
+  result:=0;
+  for I := 0 to Length(ArrProc) - 1 do
+  begin
+    result:=get_mn(i)*ArrProc[i];
+  end;
+  alfa:=(ArrTemp[BlizZnach(90)]-ArrTemp[BlizZnach(10)])/(ArrProc[BlizZnach(90)]-ArrProc[BlizZnach(10)]);
+  alfaf:=1.8*alfa;
+  Tf:=1.8*(result+273)+32;
+  dt:=0;
+  for i := 1 to 4 do
+    for j := 0 to 2 do
+      dt:=dt+5/9*a[i,j]*power(alfaf, i)*power(Tf, j);
+  result:=result+dt;
+end;
+
+end.

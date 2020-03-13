@@ -1,0 +1,129 @@
+(*
+09.12.2019
+Разработчик: Долганов И.М.
+
+Модуль разрабатывается с надеждой на хоть какую-то централизацию расчетов
+Mass - массовые доли
+Vol - объемные доли
+Mol - мольные доли
+Molar - молярная концентрация, моль/л
+
+*)
+unit UBaseConzRecalc;
+
+
+interface
+
+uses
+   Math, UClasses;
+
+  procedure MassToMol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble);
+  procedure VolToMol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble; Ro:TArrOfDouble);
+  procedure MolToMass(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble);
+  procedure MolToVol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble; Ro:TArrOfDouble);
+
+  //теперь только производные
+  procedure CoutINCin(Cout: TArrOfDouble; var Cin: TArrOfDouble);
+
+  procedure MassToVol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble; Ro:TArrOfDouble);
+
+
+
+implementation
+
+
+{из массовых долей в мольные}
+procedure MassToMol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble);
+var
+  i: integer;
+  sum: double;
+begin
+  sum:=0;
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    sum:=sum+Cin[i]/M[i];
+  end;
+
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    Cout[i]:=Cin[i]/M[i]/sum;
+  end;
+
+end;
+
+{из мольных долей в массовые}
+procedure MolToMass(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble);
+var
+  i: integer;
+  sum: double;
+begin
+  sum:=0;
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    sum:=sum+Cin[i]*M[i];
+  end;
+
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    Cout[i]:=Cin[i]*M[i]/sum;
+  end;
+
+end;
+
+{из объемных долей в мольные}
+procedure VolToMol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble; Ro:TArrOfDouble);
+var
+  i: integer;
+  sum: double;
+begin
+  sum:=0;
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    sum:=sum+Cin[i]/M[i]*Ro[i];
+  end;
+
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    Cout[i]:=Cin[i]*Ro[i]/M[i]/sum;
+  end;
+
+end;
+
+{из мольных долей в объемные}
+procedure MolToVol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble; Ro:TArrOfDouble);
+var
+  i: integer;
+  sum: double;
+begin
+  sum:=0;
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    sum:=sum+Cin[i]*M[i]/Ro[i];
+  end;
+
+  for i := 0 to Length(Cin) - 1 do
+  begin
+    Cout[i]:=Cin[i]/Ro[i]*M[i]/sum;
+  end;
+
+end;
+
+//перекладывание концентраций выходные во входные
+procedure CoutINCin(Cout: TArrOfDouble; var Cin: TArrOfDouble);
+var
+  i: integer;
+begin
+  for I := 0 to Length(Cin) - 1 do
+  begin
+    Cin[i]:=Cout[i];
+  end;
+end;
+{из массовых долей в объемные}
+procedure MassToVol(Cin: TArrOfDouble; var Cout: TArrOfDouble; M:TArrOfDouble; Ro:TArrOfDouble);
+
+begin
+  MassToMol(Cin, Cout, M);
+  CoutINCin(Cout, Cin);
+  MolToVol(Cin, Cout, M);
+end;
+end.

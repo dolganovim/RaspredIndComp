@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2019.11.28 08:47:52.143.pas,C:\Users\dolganovim\Documents\RAD Studio\Projects\Unit1.pas=C:\Users\dolganovim\Распределение внутри групп\Unit1.pas</Transaction>
+    <Transaction>2019.11.28 08:47:52.151.dfm,C:\Users\dolganovim\Documents\RAD Studio\Projects\Unit1.dfm=C:\Users\dolganovim\Распределение внутри групп\Unit1.dfm</Transaction>
+    <Transaction>2019.11.28 08:47:55.134.dproj,C:\Users\dolganovim\Documents\RAD Studio\Projects\Project1.dproj=C:\Users\dolganovim\Распределение внутри групп\Project1.dproj</Transaction>
+    <Transaction>2019.11.28 09:05:21.385.pas,C:\Users\dolganovim\Распределение внутри групп\Unit2.pas=C:\Users\dolganovim\Распределение внутри групп\URasp.pas</Transaction>
+    <Transaction>2019.12.09 14:12:51.754.pas,C:\Users\dolganovim\Распределение внутри групп\Unit2.pas=C:\Users\dolganovim\Распределение внутри групп\UBaseConzRecalc.pas</Transaction>
+  </Transactions>
+</BorlandProject>
